@@ -1,0 +1,639 @@
+TicTacToe Game source code with GUI, screenshots and databases.
+|
++- src/
+  -+ Main.java
+  ---------------
+  import javax.swing.SwingUtilities;
+
+public class Main {
+    public static void main(String[] args) {
+        // Run the GUI codes on the Event Dispatch Thread for thread safety
+        SwingUtilities.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                // Fire up the login frame!
+                LoginFrame loginScreen = new LoginFrame();
+                loginScreen.setVisible(true);
+            }
+        });
+    }
+}
+  -+ DatabaseManager.java
+  ---------------
+  import java.io.*;
+import java.util.*;
+
+public class DatabaseManager {
+    private static final String FILE_NAME = "database.txt";
+
+    // Simulates database initialization
+    public static boolean initializeFileDatabase() {
+        File file = new File(FILE_NAME);
+        if (!file.exists()) {
+            try {
+                file.createNewFile();
+                // Inject our default testing player into the text file!
+                savePlayerData(new Player("player1", "pass123", 0, 0, 0, 0));
+                System.out.println("File database initialized successfully!");
+            } catch (IOException e) {
+                System.err.println("Failed to create file database.");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Helper to read all players from the text file
+    public static List<Player> getAllPlayers() {
+        List<Player> players = new ArrayList<>();
+        File file = new File(FILE_NAME);
+        if (!file.exists()) initializeFileDatabase();
+
+        try (BufferedReader br = new BufferedReader(new FileReader(file))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] data = line.split(",");
+                if (data.length == 6) {
+                    players.add(new Player(
+                        data[0], // username
+                        data[1], // password
+                        Integer.parseInt(data[2]), // wins
+                        Integer.parseInt(data[3]), // losses
+                        Integer.parseInt(data[4]), // draws
+                        Integer.parseInt(data[5])  // score
+                    ));
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return players;
+    }
+
+    // Helper to save or update a player in the text file
+    public static void savePlayerData(Player playerToSave) {
+        List<Player> players = getAllPlayers();
+        boolean found = false;
+
+        // Update player data if they already exist
+        for (int i = 0; i < players.size(); i++) {
+            if (players.get(i).getUsername().equalsIgnoreCase(playerToSave.getUsername())) {
+                players.set(i, playerToSave);
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            players.add(playerToSave);
+        }
+
+        // Rewrite the file with updated values
+        try (PrintWriter pw = new PrintWriter(new FileWriter(FILE_NAME))) {
+            for (Player p : players) {
+                pw.println(p.getUsername() + "," + p.getPassword() + "," + 
+                           p.getWins() + "," + p.getLosses() + "," + 
+                           p.getDraws() + "," + p.getScore());
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+  -+ Player.java
+  ---------------
+  public class Player {
+    private String username;
+    private String password;
+    private int wins;
+    private int losses;
+    private int draws;
+    private int score;
+
+    // This exact constructor must match your Database file reads!
+    public Player(String username, String password, int wins, int losses, int draws, int score) {
+        this.username = username;
+        this.password = password;
+        this.wins = wins;
+        this.losses = losses;
+        this.draws = draws;
+        this.score = score;
+    }
+
+    // --- Make sure you keep your existing Getters & Setters below this line! ---
+    public String getUsername() { return username; }
+    public void setUsername(String username) { this.username = username; }
+
+    public String getPassword() { return password; }
+    public void setPassword(String password) { this.password = password; }
+
+    public int getWins() { return wins; }
+    public void setWins(int wins) { this.wins = wins; }
+
+    public int getLosses() { return losses; }
+    public void setLosses(int losses) { this.losses = losses; }
+
+    public int getDraws() { return draws; }
+    public void setDraws(int draws) { this.draws = draws; }
+
+    public int getScore() { return score; }
+    public void setScore(int score) { this.score = score; }
+}
+  -+ PlayerService.java
+  ---------------
+  import java.util.List;
+
+public class PlayerService {
+
+    public Player login(String username, String password) {
+        // Fetch all accounts from the text file database
+        List<Player> players = DatabaseManager.getAllPlayers();
+        
+        for (Player p : players) {
+            if (p.getUsername().equals(username) && p.getPassword().equals(password)) {
+                return p; // Found a match!
+            }
+        }
+        return null; // Login failed
+    }
+
+    public boolean register(String username, String password) {
+        List<Player> players = DatabaseManager.getAllPlayers();
+        
+        for (Player p : players) {
+            if (p.getUsername().equalsIgnoreCase(username)) {
+                return false; // Username already taken
+            }
+        }
+
+        // Create new player and save to file
+        Player newPlayer = new Player(username, password, 0, 0, 0, 0);
+        DatabaseManager.savePlayerData(newPlayer);
+        return true;
+    }
+
+    public void updateStatistics(Player player, String outcome) {
+        if (outcome.equalsIgnoreCase("win")) {
+            player.setWins(player.getWins() + 1);
+            player.setScore(player.getScore() + 10);
+        } else if (outcome.equalsIgnoreCase("loss")) {
+            player.setLosses(player.getLosses() + 1);
+            player.setScore(Math.max(0, player.getScore() - 5)); // Don't go below 0
+        } else if (outcome.equalsIgnoreCase("draw")) {
+            player.setDraws(player.getDraws() + 1);
+            player.setScore(player.getScore() + 2);
+        }
+
+        // Save updated data straight back to the file
+        DatabaseManager.savePlayerData(player);
+    }
+}
+  -+ GameLogic.java
+  ---------------
+  import java.util.Random;
+
+public class GameLogic {
+	private char[][] board;
+    private char playerSymbol;
+    private char computerSymbol;
+    private Random random;
+
+    public GameLogic() {
+        board = new char[3][3];
+        playerSymbol = 'X';    // You play as X
+        computerSymbol = 'O';  // Computer plays as O
+        random = new Random();
+        resetBoard();
+    }
+
+    // Clears the 3x3 board grid for a fresh game
+    public void resetBoard() {
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                board[i][j] = ' ';
+            }
+        }
+    }
+
+    // Attempts to place a move. Returns true if successful.
+    public boolean makeMove(int row, int col, char symbol) {
+        if (row >= 0 && row < 3 && col >= 0 && col < 3 && board[row][col] == ' ') {
+            board[row][col] = symbol;
+            return true;
+        }
+        return false;
+    }
+
+    // Handles the computer's turn by finding a random empty spot
+    public int[] makeComputerMove() {
+        int emptyCount = 0;
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                if (board[i][j] == ' ') emptyCount++;
+            }
+        }
+
+        if (emptyCount == 0) return null; // No moves left
+
+        while (true) {
+            int row = random.nextInt(3);
+            int col = random.nextInt(3);
+            if (makeMove(row, col, computerSymbol)) {
+                return new int[]{row, col}; // Returns where the computer moved
+            }
+        }
+    }
+
+    // Checks the board to see if the given symbol won
+    public boolean checkWin(char symbol) {
+        // Check rows and columns
+        for (int i = 0; i < 3; i++) {
+            if (board[i][0] == symbol && board[i][1] == symbol && board[i][2] == symbol) return true;
+            if (board[0][i] == symbol && board[1][i] == symbol && board[2][i] == symbol) return true;
+        }
+        // Check diagonals
+        if (board[0][0] == symbol && board[1][1] == symbol && board[2][2] == symbol) return true;
+        if (board[0][2] == symbol && board[1][1] == symbol && board[2][0] == symbol) return true;
+
+        return false;
+    }
+
+    // Checks if the board is completely full (Draw)
+    public boolean isBoardFull() {
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                if (board[i][j] == ' ') return false;
+            }
+        }
+        return true;
+    }
+
+    public char getPlayerSymbol() { return playerSymbol; }
+    public char getComputerSymbol() { return computerSymbol; }
+    public char[][] getBoard() { return board; }
+
+}
+  -+ LoginFrame.java
+  ---------------
+  import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+
+public class LoginFrame extends JFrame {
+    private JTextField usernameField;
+    private JPasswordField passwordField;
+    private JButton loginButton;
+    private PlayerService playerService;
+
+    public LoginFrame() {
+        playerService = new PlayerService();
+
+        // Window Layout Settings
+        setTitle("Tic-Tac-Toe - Login");
+        setSize(350, 220);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLocationRelativeTo(null); // Centers window on screen
+        setLayout(new GridLayout(4, 1, 10, 10));
+
+        // UI Components
+        JPanel userPanel = new JPanel(new FlowLayout());
+        userPanel.add(new JLabel("Username: "));
+        usernameField = new JTextField(15);
+        userPanel.add(usernameField);
+
+        JPanel passPanel = new JPanel(new FlowLayout());
+        passPanel.add(new JLabel("Password: "));
+        passwordField = new JPasswordField(15);
+        passPanel.add(passwordField);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout());
+        loginButton = new JButton("Login");
+        buttonPanel.add(loginButton);
+
+        // Add panels to frame
+        add(new JLabel("Welcome to Tic-Tac-Toe", SwingConstants.CENTER));
+        add(userPanel);
+        add(passPanel);
+        add(buttonPanel);
+
+        // Action Listener for Login Button
+        loginButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                String username = usernameField.getText();
+                String password = new String(passwordField.getPassword());
+
+                // Call PlayerService to check database
+                Player player = playerService.login(username, password);
+
+                if (player != null) {
+                    JOptionPane.showMessageDialog(LoginFrame.this, "Login Successful! Welcome, " + player.getUsername());
+                    // Next step will open MainMenuFrame here
+                    new MainMenuFrame(player).setVisible(true);
+                    dispose(); // Close login window
+                } else {
+                    JOptionPane.showMessageDialog(LoginFrame.this, "Invalid credentials. Try again.", "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+    }
+}
+  -+ MainMenuFrame.java
+  ---------------
+  import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+
+public class MainMenuFrame extends JFrame {
+    private Player currentPlayer;
+
+    public MainMenuFrame(Player player) {
+        this.currentPlayer = player;
+
+        setTitle("Tic-Tac-Toe - Main Menu");
+        setSize(400, 450);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLocationRelativeTo(null);
+        setLayout(new BorderLayout());
+
+        // --- TOP STATS PANEL ---
+        JPanel statsPanel = new JPanel();
+        statsPanel.setLayout(new BoxLayout(statsPanel, BoxLayout.Y_AXIS));
+        statsPanel.setBorder(BorderFactory.createTitledBorder("Player Profiles & Stats"));
+        statsPanel.setBackground(new Color(240, 245, 250));
+
+        JLabel welcomeLabel = new JLabel("Welcome, " + currentPlayer.getUsername() + "!");
+        welcomeLabel.setFont(new Font("Arial", Font.BOLD, 18));
+        welcomeLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel scoreLabel = new JLabel("Total Score: " + currentPlayer.getScore());
+        scoreLabel.setFont(new Font("Arial", Font.PLAIN, 14));
+        scoreLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        JLabel recordsLabel = new JLabel("Wins: " + currentPlayer.getWins() + 
+                " | Losses: " + currentPlayer.getLosses() + 
+                " | Draws: " + currentPlayer.getDraws());
+        recordsLabel.setFont(new Font("Arial", Font.PLAIN, 14));
+        recordsLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        statsPanel.add(Box.createVerticalStrut(10));
+        statsPanel.add(welcomeLabel);
+        statsPanel.add(Box.createVerticalStrut(5));
+        statsPanel.add(scoreLabel);
+        statsPanel.add(Box.createVerticalStrut(5));
+        statsPanel.add(recordsLabel);
+        statsPanel.add(Box.createVerticalStrut(10));
+
+        add(statsPanel, BorderLayout.NORTH);
+
+        // --- BUTTONS PANEL ---
+        JPanel buttonsPanel = new JPanel();
+        buttonsPanel.setLayout(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(10, 10, 10, 10);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.gridx = 0;
+
+        JButton playButton = new JButton("Play Tic-Tac-Toe");
+        JButton leaderboardButton = new JButton("View Top Scorers");
+        JButton logoutButton = new JButton("Logout");
+
+        // Style buttons
+        Font buttonFont = new Font("Arial", Font.PLAIN, 14);
+        playButton.setFont(buttonFont);
+        leaderboardButton.setFont(buttonFont);
+        logoutButton.setFont(buttonFont);
+
+        playButton.setPreferredSize(new Dimension(250, 40));
+        leaderboardButton.setPreferredSize(new Dimension(250, 40));
+        logoutButton.setPreferredSize(new Dimension(250, 40));
+
+        // --- BUTTON ACTIONS ---
+
+     // Play Game
+        playButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                // Open the game board and pass the current logged-in player profile
+                new GameFrame(currentPlayer).setVisible(true);
+                // Close the main menu window
+                dispose();
+            }
+        });
+
+        // Open Leaderboard (Fixed Constructor Call Here)
+        leaderboardButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                // Removed (currentPlayer) since TopScorersFrame reads data directly from file
+                new TopScorersFrame().setVisible(true); 
+                dispose();
+            }
+        });
+
+        // Logout
+        logoutButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                new LoginFrame().setVisible(true);
+                dispose();
+            }
+        });
+
+        gbc.gridy = 0;
+        buttonsPanel.add(playButton, gbc);
+        gbc.gridy = 1;
+        buttonsPanel.add(leaderboardButton, gbc);
+        gbc.gridy = 2;
+        buttonsPanel.add(logoutButton, gbc);
+
+        add(buttonsPanel, BorderLayout.CENTER);
+    }
+}
+  -+ GameFrame.java
+  ---------------
+  import javax.swing.*;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+
+public class GameFrame extends JFrame {
+    private JButton[][] buttons;
+    private GameLogic gameLogic;
+    private PlayerService playerService;
+    private Player currentPlayer;
+    private JLabel turnLabel;
+
+    public GameFrame(Player player) {
+        this.currentPlayer = player;
+        this.gameLogic = new GameLogic();
+        this.playerService = new PlayerService();
+        this.buttons = new JButton[3][3];
+
+        // Window Settings
+        setTitle("Tic-Tac-Toe Match");
+        setSize(400, 450);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        setLocationRelativeTo(null);
+        setLayout(new BorderLayout());
+
+        // Header status bar
+        turnLabel = new JLabel("Your Turn (X)", SwingConstants.CENTER);
+        turnLabel.setFont(new Font("Arial", Font.BOLD, 16));
+        turnLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
+        add(turnLabel, BorderLayout.NORTH);
+
+        // 3x3 Grid Panel for Buttons
+        JPanel gridPanel = new JPanel(new GridLayout(3, 3, 5, 5));
+        gridPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        // Create buttons and add them to grid
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 3; col++) {
+                final int r = row;
+                final int c = col;
+                buttons[row][col] = new JButton("");
+                buttons[row][col].setFont(new Font("Arial", Font.BOLD, 40));
+                buttons[row][col].setFocusPainted(false);
+
+                // Handle button clicks
+                buttons[row][col].addActionListener(new ActionListener() {
+                    @Override
+                    public void actionPerformed(ActionEvent e) {
+                        handlePlayerMove(r, c);
+                    }
+                });
+
+                gridPanel.add(buttons[row][col]);
+            }
+        }
+        add(gridPanel, BorderLayout.CENTER);
+    }
+
+    private void handlePlayerMove(int row, int col) {
+        // 1. Check if the cell is valid and empty
+        if (gameLogic.makeMove(row, col, gameLogic.getPlayerSymbol())) {
+            buttons[row][col].setText(String.valueOf(gameLogic.getPlayerSymbol()));
+            buttons[row][col].setForeground(Color.BLUE);
+
+            // 2. Check if player won
+            if (gameLogic.checkWin(gameLogic.getPlayerSymbol())) {
+                endGame("win", "Congratulations! You won!");
+                return;
+            }
+
+            // 3. Check for a Draw
+            if (gameLogic.isBoardFull()) {
+                endGame("draw", "It's a draw!");
+                return;
+            }
+
+            // 4. Computer's Turn
+            turnLabel.setText("Computer's Turn (O)...");
+            int[] compMove = gameLogic.makeComputerMove();
+            if (compMove != null) {
+                int cr = compMove[0];
+                int cc = compMove[1];
+                buttons[cr][cc].setText(String.valueOf(gameLogic.getComputerSymbol()));
+                buttons[cr][cc].setForeground(Color.RED);
+            }
+
+            // 5. Check if computer won
+            if (gameLogic.checkWin(gameLogic.getComputerSymbol())) {
+                endGame("loss", "The computer won! Better luck next time.");
+                return;
+            }
+
+            // 6. Check for a Draw again after computer move
+            if (gameLogic.isBoardFull()) {
+                endGame("draw", "It's a draw!");
+                return;
+            }
+
+            turnLabel.setText("Your Turn (X)");
+        }
+    }
+
+    private void endGame(String outcome, String message) {
+        JOptionPane.showMessageDialog(this, message);
+        
+        // Push the update safely into your database!
+        playerService.updateStatistics(currentPlayer, outcome);
+
+        // Go back to the updated Main Menu dashboard
+        new MainMenuFrame(currentPlayer).setVisible(true);
+        dispose();
+    }
+}
+  -+ TopScorersFrame.java
+  ---------------
+  import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.util.List;
+
+public class TopScorersFrame extends JFrame {
+    // 1. DECLARE IT HERE AT THE TOP OF THE CLASS
+    private DefaultTableModel tableModel; 
+    private JTable table;
+
+    public TopScorersFrame() {
+        setTitle("Tic-Tac-Toe - Top Scorers Leaderboard");
+        setSize(500, 350);
+        setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        setLocationRelativeTo(null);
+        setLayout(new BorderLayout());
+
+        // Define column headers
+        String[] columns = {"Rank", "Username", "Wins", "Losses", "Draws", "Total Score"};
+        
+        // 2. INITIALIZE IT HERE INSIDE THE CONSTRUCTOR
+        tableModel = new DefaultTableModel(columns, 0); 
+        table = new JTable(tableModel);
+
+        // Customize table visuals slightly
+        table.setFont(new Font("Arial", Font.PLAIN, 14));
+        table.setRowHeight(25);
+        JScrollPane scrollPane = new JScrollPane(table);
+        add(scrollPane, BorderLayout.CENTER);
+
+        // --- BACK TO MENU BUTTON ---
+        JButton backButton = new JButton("Back to Main Menu");
+        backButton.setFont(new Font("Arial", Font.BOLD, 14));
+        backButton.addActionListener(e -> {
+            // Re-fetch database info to safely drop back into the menu
+            List<Player> players = DatabaseManager.getAllPlayers();
+            Player defaultPlayer = players.isEmpty() ? new Player("player1", "pass123", 0, 0, 0, 0) : players.get(0);
+            new MainMenuFrame(defaultPlayer).setVisible(true);
+            dispose();
+        });
+        add(backButton, BorderLayout.SOUTH);
+
+        // 3. LOAD THE DATA FROM YOUR FILE ENGINE
+        loadLeaderboardData(); 
+    }
+
+    private void loadLeaderboardData() {
+        List<Player> players = DatabaseManager.getAllPlayers();
+
+        // Sort players by score in descending order
+        players.sort((p1, p2) -> Integer.compare(p2.getScore(), p1.getScore()));
+
+        int rank = 1;
+        // Load up to the top 5 players into the visual table
+        for (Player p : players) {
+            if (rank > 5) break;
+            tableModel.addRow(new Object[]{
+                rank + "th", 
+                p.getUsername(), 
+                p.getWins(), 
+                p.getLosses(), 
+                p.getDraws(), 
+                p.getScore()
+            });
+            rank++;
+        }
+    }
+}
